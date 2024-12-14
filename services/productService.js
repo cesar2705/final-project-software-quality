@@ -47,7 +47,9 @@ class ProductService {
 
         // Add sorting if specified
         if (sort) {
-            queryOptions.order = [sort.split(',')];  // e.g. "price,DESC"
+            //queryOptions.order = [sort.split(',')];  // e.g. "price,DESC"
+            const [field, direction] = sort.split(',');  // Destructure the field and direction
+            queryOptions.order = [[field, direction || 'ASC']];  // Default to ASC if direction is missing
         }
 
         // Add pagination if specified
@@ -84,7 +86,9 @@ class ProductService {
 
         // Add sorting if specified
         if (sort) {
-            queryOptions.order = [sort.split(',')];
+            //queryOptions.order = [sort.split(',')];
+            const [field, direction] = sort.split(',');  // Destructure the field and direction
+            queryOptions.order = [[field, direction || 'ASC']];  // Default to ASC if direction is missing
         }
 
         // Add pagination if specified
