@@ -8,7 +8,10 @@ router.post('/', async (req, res) => {
     const category = await Category.create(req.body);
     res.status(201).json(category);
   } catch (error) {
-    res.status(400).json({ error: error.message });
+    if (error.name === 'SequelizeValidationError') {
+      return res.status(400).json({ error: error.message });
+    }
+    res.status(500).json({ error: 'Internal Server Error' });
   }
 });
 

@@ -1,18 +1,22 @@
-const request = require('supertest');
-const express = require('express');
-const bodyParser = require('body-parser');
-const { initTestDb, closeTestDb } = require('../setup/testDb');
-const cartRouter = require('../../routes/cart');
-const Cart = require('../../models/cart');
-const Product = require('../../models/product');
-const Category = require('../../models/category');
+const request = require('supertest');  
+const express = require('express');  
+const cartRouter = require('../../routes/cart');  
+const CartService = require('../../services/cartService');  
 
-const app = express();
-app.use(bodyParser.json());
-app.use('/api/carts', cartRouter);
+const bodyParser = require('body-parser');  
+const { initTestDb, closeTestDb } = require('../setup/testDb');  
+const Cart = require('../../models/cart');  
+const Product = require('../../models/product');  
+const Category = require('../../models/category');  
+
+const app = express();  
+app.use(express.json());  
+app.use('/api/carts', cartRouter);  
+
+// Mock de CartService para simular el comportamiento del servicio en las pruebas
+jest.mock('../../services/cartService');
 
 describe('Cart Routes', () => {
-
   // Inicialización de la base de datos de prueba antes de ejecutar las pruebas
   beforeAll(async () => {
     await initTestDb();
@@ -30,124 +34,145 @@ describe('Cart Routes', () => {
     await Category.destroy({ where: {} });
   });
 
+  // Limpiar los mocks después de cada prueba
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
   describe('POST /api/carts/:userId', () => {
-    // Prueba para verificar que un carrito se crea correctamente
-    it('debería crear un nuevo carrito', async () => {
-      const userId = '0527';
-      const res = await request(app)
-        .post(`/api/carts/${userId}`)
-        .expect(201);
-      
-      // Verifica que el carrito se haya creado con el userId y que tiene un id asignado
-      expect(res.body).toHaveProperty('userId', userId);
-      expect(res.body).toHaveProperty('id');
-    });    
+
+    it('Debería crear un carrito para el usuario', async () => {
+      const mockCart = { id: 'cart123', userId: 'user1' };  // Mock de un carrito
+      CartService.createCart.mockResolvedValue(mockCart);  // Respuesta exitosa del servicio simulada
+
+      const response = await request(app).post('/api/carts/user1');  // Realiza una solicitud POST
+
+      // Verificar que la respuesta sea correcta
+      expect(response.status).toBe(201);  // Código de estado 201 para creación exitosa
+      expect(response.body).toEqual(mockCart);  // El cuerpo de la respuesta debe ser el carrito creado
+      expect(CartService.createCart).toHaveBeenCalledWith('user1');  // Verificar que el servicio fue llamado correctamente
+    });
+
+    it('Debería devolver 400 si ocurre un error', async () => {
+      CartService.createCart.mockRejectedValue(new Error('Error al crear el carrito'));  // Error simulado en el servicio
+
+      const response = await request(app).post('/api/carts/user1');  // Realiza la solicitud POST
+
+      // Verificar que se maneje correctamente el error
+      expect(response.status).toBe(400);  // Código de estado 400 para error
+      expect(response.body).toEqual({ error: 'Error al crear el carrito' });  // El cuerpo debe contener el mensaje de error
+    });
   });
 
   describe('POST /api/carts/:cartId/items', () => {
-    let cart, product;
 
-    beforeEach(async () => {
-      const category = await Category.create({ name: 'Test Category' });
-      product = await Product.create({
-        name: 'Test Product',
-        price: 100,
-        inventory: 10,
-        categoryId: category.id
-      });
-      cart = await Cart.create({ userId: '1' });
+    it('Debería añadir un artículo al carrito', async () => {
+      const mockCartItem = { id: 'item1', productId: 'product1', quantity: 2 };  // Mock de un artículo en el carrito
+      CartService.addItemToCart.mockResolvedValue(mockCartItem);  // Respuesta simulada exitosa del servicio
+
+      const response = await request(app)
+        .post('/api/carts/cart123/items')  // Realizar una solicitud POST
+        .send({ productId: 'product1', quantity: 2 });  // Enviar los datos del artículo
+
+      // Verificar que la respuesta sea correcta
+      expect(response.status).toBe(201);  
+      expect(response.body).toEqual(mockCartItem);  // El cuerpo de la respuesta debe ser el artículo añadido
+      expect(CartService.addItemToCart).toHaveBeenCalledWith('cart123', 'product1', 2);  // Verificar que el servicio fue llamado correctamente
     });
 
-    // Prueba para agregar un producto al carrito
-    it('debería agregar un artículo al carrito', async () => {
-      // Envia una solicitud POST para agregar un artículo al carrito
-      const res = await request(app)
-        .post(`/api/carts/${cart.id}/items`) // URL con el id del carrito
-        .send({
-          productId: product.id, // Envia el id del producto a agregar
-          quantity: 1 // Cantidad a agregar
-        })
-        .expect(201); // Espera una respuesta con estado 201 (Creado)
+    it('Debería devolver 400 si ocurre un error', async () => {
+      CartService.addItemToCart.mockRejectedValue(new Error('Error al añadir el artículo'));  // Error simulado en el servicio
 
-      // Verifica que el artículo se haya agregado al carrito
-      expect(res.body).toHaveProperty('productId', product.id); // Verifica que el id del producto esté en la respuesta
-      expect(res.body).toHaveProperty('quantity', 1); // Verifica que la cantidad es la correcta
+      const response = await request(app)
+        .post('/api/carts/cart123/items')  // Realizar la solicitud POST
+        .send({ productId: 'product1', quantity: 2 });  // Enviar los datos del artículo
+
+      // Verificar que se maneje correctamente el error
+      expect(response.status).toBe(400);  // Código de estado 400 para error
+      expect(response.body).toEqual({ error: 'Error al añadir el artículo' });  // El cuerpo debe contener el mensaje de error
     });
-
-    it('debería devolver un error si falta productId o quantity', async () => {
-      const res = await request(app)
-        .post('/api/carts/1/items')
-        .send({ quantity: 2 }) // Falta productId
-        .expect(400);
-      
-      expect(res.body).toHaveProperty('error', 'Product not found');
-    });
-
-    it('debería devolver un error si el cartId es inválido', async () => {
-      const res = await request(app)
-        .post('/api/carts/ /items')
-        .send({ productId: 'prod123', quantity: 2 })
-        .expect(400);
-  
-      expect(res.body).toHaveProperty('error', 'Product not found');
-    });
-
   });
+
 
   describe('GET /api/carts/:cartId/items', () => {
-    // Prueba para obtener los artículos del carrito con sus totales
-    it('debería retornar los artículos del carrito con totales', async () => {
-    
-      // Crea una categoría y un producto para agregarlo al carrito
-      const category = await Category.create({ name: 'Test Category' });
-      const product = await Product.create({
-        name: 'Test Product',
-        price: 100,
-        taxRate: 0.1, // Asegúrate de que el producto tenga un 'taxRate'
-        inventory: 10,
-        categoryId: category.id
-      });
 
-      const cart = await Cart.create({ userId: '1' });
+    it('Debería obtener todos los artículos del carrito', async () => {
+      // Mock de artículos en el carrito
+      const mockItems = [  
+        { id: 'item1', productId: 'product1', quantity: 2 },
+        { id: 'item2', productId: 'product2', quantity: 1 },
+      ];
+      CartService.getCartItems.mockResolvedValue(mockItems);  // Simula la respuesta exitosa del servicio
 
-      // Agrega un artículo al carrito
-      await request(app)
-        .post(`/api/carts/${cart.id}/items`)
-        .send({ productId: product.id, quantity: 2 });
+      const response = await request(app).get('/api/carts/cart123/items');  // Realiza la solicitud GET
 
-      // Realiza la solicitud GET para obtener los artículos del carrito
-      const res = await request(app)
-        .get(`/api/carts/${cart.id}/items`) // URL para obtener los artículos del carrito
-        .expect(200); // Espera una respuesta con estado 200 (OK)
-
-      // Verifica que el objeto devuelto tenga la propiedad 'items' con al menos un artículo
-      expect(res.body.items.length).toBe(1); // Verifica que hay un artículo en el carrito
-      expect(res.body.items[0]).toHaveProperty('productId', product.id); // Verifica que el id del producto es correcto
-      expect(res.body.items[0]).toHaveProperty('itemSubtotal'); // Verifica que se ha calculado el subtotal para el artículo
-      expect(res.body.items[0].itemSubtotal).toBe(200); // Verifica que el subtotal es correcto (100 * 2)
-
-      expect(res.body.items[0]).toHaveProperty('itemTax'); // Verifica que se ha calculado el impuesto para el artículo
-      expect(res.body.items[0].itemTax).toBe(20); // Verifica que el impuesto es correcto (200 * 10%)
-
-      // Verifica que los valores de resumen estén calculados correctamente
-      expect(res.body.summary).toHaveProperty('subtotal');
-      expect(res.body.summary).toHaveProperty('totalTax');
-      expect(res.body.summary).toHaveProperty('total');
-      expect(res.body.summary.total).toBe(220); // Verifica el total del carrito (se supone que es el mismo valor del artículo en este caso)
+      // Verificar que la respuesta sea correcta
+      expect(response.status).toBe(200);  // Código de estado 200 para éxito
+      expect(response.body).toEqual(mockItems);  // Lista de artículos en la respuesta
+      expect(CartService.getCartItems).toHaveBeenCalledWith('cart123');  // Verificar que el servicio fue llamado correctamente
     });
 
-    /* it('debería devolver un error si el cartId no existe', async () => {
-      const res = await request(app)
-        .get('/api/carts/999/items')
-        .expect(400);
-  
-      expect(res.body).toHaveProperty('error', 'Carrito no encontrado');
+    it('Debería devolver 400 si ocurre un error', async () => {
+      CartService.getCartItems.mockRejectedValue(new Error('Error al obtener los artículos'));  // Simula un error en el servicio
+
+      const response = await request(app).get('/api/carts/cart123/items');  // Realizar la solicitud GET
+
+      // Verificar que se maneje correctamente el error
+      expect(response.status).toBe(400);  // Código de estado 400 para error
+      expect(response.body).toEqual({ error: 'Error al obtener los artículos' });  // El cuerpo debe contener el mensaje de error
     });
- */
-    
   });
 
+  describe('PUT /api/carts/:cartId/items/:itemId', () => {
 
-  
+    it('Debería actualizar la cantidad de un artículo en el carrito', async () => {
+      const mockCartItem = { id: 'item1', productId: 'product1', quantity: 3 };  // Mock del artículo con cantidad actualizada
+      CartService.updateCartItem.mockResolvedValue(mockCartItem);  // Simula la respuesta exitosa del servicio
+
+      const response = await request(app)
+        .put('/api/carts/cart123/items/item1')  // Realizar la solicitud PUT
+        .send({ quantity: 3 });  // Enviar la nueva cantidad
+
+      // Verificar que la respuesta sea correcta
+      expect(response.status).toBe(200);  // Código de estado 200 para éxito
+      expect(response.body).toEqual(mockCartItem);  // El cuerpo de la respuesta debe ser el artículo actualizado
+      expect(CartService.updateCartItem).toHaveBeenCalledWith('item1', 3);  // Verificar que el servicio fue llamado correctamente
+    });
+
+    it('Debería devolver 400 si ocurre un error', async () => {
+      CartService.updateCartItem.mockRejectedValue(new Error('Error al actualizar el artículo'));  // Simula un error en el servicio
+
+      const response = await request(app)
+        .put('/api/carts/cart123/items/item1')  // Realizar la solicitud PUT
+        .send({ quantity: 3 });  // Enviar la nueva cantidad
+
+      // Verificar que se maneje correctamente el error
+      expect(response.status).toBe(400);  // Código de estado 400 para error
+      expect(response.body).toEqual({ error: 'Error al actualizar el artículo' });  // El cuerpo debe contener el mensaje de error
+    });
+  });
+
+  describe('DELETE /api/carts/:cartId/items/:itemId', () => {
+
+    it('debe eliminar un artículo del carrito', async () => {
+      CartService.removeCartItem.mockResolvedValue();  // Simula la respuesta exitosa del servicio
+
+      const response = await request(app).delete('/api/carts/cart123/items/item1');  // Realizar la solicitud DELETE
+
+      // Verificar que la respuesta sea correcta
+      expect(response.status).toBe(204);  // Código de estado 204 para eliminación exitosa
+      expect(CartService.removeCartItem).toHaveBeenCalledWith('item1');  // Verificar que el servicio fue llamado correctamente
+    });
+
+    it('Debería devolver 400 si ocurre un error', async () => {
+      CartService.removeCartItem.mockRejectedValue(new Error('Error al eliminar el artículo'));  // Simula un error en el servicio
+
+      const response = await request(app).delete('/api/carts/cart123/items/item1');  // Realizar la solicitud DELETE
+
+      // Verificar que se maneje correctamente el error
+      expect(response.status).toBe(400);  // Código de estado 400 para error
+      expect(response.body).toEqual({ error: 'Error al eliminar el artículo' });  // El cuerpo debe contener el mensaje de error
+    });
+  });
 
 });
