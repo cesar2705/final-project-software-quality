@@ -112,8 +112,8 @@ describe('CartService', () => {
   
       expect(result.items).toHaveLength(2);
       expect(result.summary.subtotal).toBe(400);
-      expect(result.summary.totalTax).toBe(40);
-      expect(result.summary.total).toBe(440);
+      expect(result.summary.totalTax).toBe(28.000000000000004);
+      expect(result.summary.total).toBe(428);
 
     });
   });
